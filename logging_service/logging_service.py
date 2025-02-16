@@ -8,6 +8,10 @@ class LoggingService(logging_pb2_grpc.LoggingServiceServicer):
         self.messages = {}
     
     def LogMessage(self, request, context):
+
+        if request.message in self.messages.values():
+            return logging_pb2.LogResponse(status="Duplicate message ignored")
+            
         self.messages[request.id] = request.message
         return logging_pb2.LogResponse(status = "Message logged successfully")
     
@@ -17,9 +21,9 @@ class LoggingService(logging_pb2_grpc.LoggingServiceServicer):
 def serve():
     server = grpc.server(futures.ThreadPoolExecutor(max_workers = 10))
     logging_pb2_grpc.add_LoggingServiceServicer_to_server(LoggingService(), server)
-    server.add_insecure_port('[::]:50051')
+    server.add_insecure_port('[::]:8081')
 
-    logging.info("Starting gRPC server on port 50051...")
+    logging.info("Starting gRPC server on port 8081...")
     server.start()
     server.wait_for_termination()
 
