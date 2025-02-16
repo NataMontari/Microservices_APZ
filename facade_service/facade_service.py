@@ -50,7 +50,7 @@ def handle_post():
     if not msg:
         return jsonify(error="No message provided"), 400
     
-    msg_id = str(uuid.uuid4())  # Генеруємо унікальний UUID
+    msg_id = str(uuid.uuid4())  # Generate unique uuid
     logging.info(f"Received message: {msg}")
 
     try:
