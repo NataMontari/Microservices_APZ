@@ -5,18 +5,57 @@ import requests
 import logging
 from proto import logging_pb2
 from proto import logging_pb2_grpc
+import random
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 app = Flask(__name__)
 
+config_service = "http://localhost:9000/get_services"
 
-channel = grpc.insecure_channel("localhost:8081")
-stub = logging_pb2_grpc.LoggingServiceStub(channel)
+
+def get_services(service_name):
+    try:
+        response = requests.get(config_service, params = {"service": service_name})
+        if response.status_code == 200:
+            return response.json().get("instances", [])
+        return []
+    except requests.RequestException as e:
+        logging.error("Couldn't connect to the config service")
+        return []
+    
+def get_logging_service():
+    instances = get_services("logging-service")
+    if not instances:
+        raise Exception("No available ports for logging service or wrong config")
+    return instances
+
+def get_messages_service():
+    instances = get_services("messages-service")
+    if not instances:
+        raise Exception("No available ports for messages service or wrong config")
+    return instances[0]
+
+def randomConnect():
+    logging_services = get_logging_service()
+    random.shuffle(logging_services)
+    for service in logging_services:
+        try:
+            channel = grpc.insecure_channel(service)
+            stub = logging_pb2_grpc.LoggingServiceStub(channel)
+            stub.GetMessages(logging_pb2.Empty())
+            return stub
+        except Exception:
+            continue
+    raise Exception("No available logging services!")
+
+# channel = grpc.insecure_channel("localhost:8081")
+# stub = logging_pb2_grpc.LoggingServiceStub(channel)
 
 def get_messages_service_response():
     try:
         # Request to messages_service
-        response = requests.get("http://localhost:8082/get_message")
+        messages_service = get_messages_service()
+        response = requests.get(f"http://{messages_service}/get_message")
         return response.text  # Returns a text answer
     except requests.RequestException as e:
         return f"Error while calling messages-service: {e}"
@@ -27,6 +66,7 @@ def log_message_with_retry(message_uuid: str, message: str):
     try:
         print(f"Attempting to send message: {message}")
         
+        stub = randomConnect()
         request = logging_pb2.LogRequest(id=message_uuid, message=message)
         response = stub.LogMessage(request)  # call gRPC
         
@@ -64,6 +104,7 @@ def handle_post():
 @app.route("/get_messages", methods = ["GET"])
 def handle_get():
     try:
+        stub = randomConnect()
         response = stub.GetMessages(logging_pb2.Empty())
         logging_messages = list(response.messages)
 
